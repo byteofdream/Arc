@@ -1,0 +1,8 @@
+<RCC>
+  <qresource prefix="/">
+    <file alias="web/index.html">../web/index.html</file>
+    <file alias="web/styles.css">../web/styles.css</file>
+    <file alias="web/app.js">../web/app.js</file>
+  </qresource>
+</RCC>
+
