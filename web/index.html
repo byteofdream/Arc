@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Arc Mini IDE</title>
+    <link rel="stylesheet" href="styles.css" />
+
+    <!-- Qt WebChannel -->
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+
+    <!-- Monaco (CDN). Works out-of-the-box with internet access. -->
+    <script>
+      // Monaco workers from CDN via data: URL (avoids cross-origin worker issues).
+      window.MonacoEnvironment = {
+        getWorkerUrl: function (workerId, label) {
+          const base = "https://cdn.jsdelivr.net/npm/monaco-editor@0.47.0/min/";
+          const proxy = `
+            self.MonacoEnvironment = { baseUrl: "${base}" };
+            importScripts("${base}vs/base/worker/workerMain.js");
+          `;
+          return `data:text/javascript;charset=utf-8,${encodeURIComponent(proxy)}`;
+        },
+      };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.47.0/min/vs/loader.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <aside class="sidebar">
+        <button class="sidebtn active" title="Explorer">
+          <span class="ico">⧉</span>
+        </button>
+        <button class="sidebtn" id="btnOpenFolder" title="Open Folder">
+          <span class="ico">🗂</span>
+        </button>
+        <button class="sidebtn" id="btnOpenFile" title="Open File">
+          <span class="ico">📄</span>
+        </button>
+        <button class="sidebtn" id="btnExtensions" title="Extensions">
+          <span class="ico">🧩</span>
+        </button>
+        <div class="spacer"></div>
+        <button class="sidebtn" id="btnSettings" title="Settings">
+          <span class="ico">⚙</span>
+        </button>
+        <button class="sidebtn" id="btnSave" title="Save (Ctrl+S)">
+          <span class="ico">💾</span>
+        </button>
+      </aside>
+
+      <section class="panel">
+        <header class="panelHeader">
+          <div class="panelTitle">EXPLORER</div>
+          <div class="panelActions">
+            <button class="ghost" id="btnRefresh" title="Refresh">⟳</button>
+          </div>
+        </header>
+        <div id="explorer" class="explorer"></div>
+      </section>
+
+      <main class="main">
+        <div class="titlebar">
+          <div class="crumbs">
+            <span class="pill">Arc Mini IDE</span>
+            <span class="sep">/</span>
+            <span id="workspaceLabel" class="muted">No folder opened</span>
+          </div>
+          <div class="status">
+            <span id="statusText" class="statusText">Ready</span>
+          </div>
+        </div>
+
+        <div class="tabs" id="tabs"></div>
+
+        <div class="editorWrap">
+          <div id="editor" class="editor"></div>
+          <div class="welcome" id="welcome">
+            <div class="welcomeCard">
+              <div class="welcomeTitle">Welcome</div>
+              <div class="welcomeText">
+                - Open a folder to browse files in Explorer<br />
+                - Open a file to start editing<br />
+                - Save with Ctrl+S
+              </div>
+              <div class="welcomeActions">
+                <button class="primary" id="welcomeOpenFolder">Open Folder</button>
+                <button class="secondary" id="welcomeOpenFile">Open File</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Settings / Extensions overlay -->
+    <div class="overlay hidden" id="overlay">
+      <div class="overlayBackdrop" id="overlayBackdrop"></div>
+      <div class="overlayPanel" role="dialog" aria-modal="true" aria-label="Settings">
+        <div class="overlayHeader">
+          <div class="overlayTitle" id="overlayTitle">Settings</div>
+          <button class="overlayClose" id="overlayClose" title="Close">×</button>
+        </div>
+        <div class="overlayBody" id="overlayBody">
+          <div class="form">
+            <div class="formRow">
+              <div class="formLabel">
+                <div class="k">UI Theme</div>
+                <div class="d">Overall application look</div>
+              </div>
+              <select class="select" id="uiTheme">
+                <option value="arc-dark">Arc Dark</option>
+                <option value="midnight">Midnight</option>
+                <option value="graphite">Graphite</option>
+              </select>
+            </div>
+
+            <div class="formRow">
+              <div class="formLabel">
+                <div class="k">Editor Theme</div>
+                <div class="d">Monaco theme</div>
+              </div>
+              <select class="select" id="monacoTheme">
+                <option value="vs-dark">vs-dark</option>
+                <option value="arc-dark">Arc Dark (Monaco)</option>
+                <option value="arc-midnight">Arc Midnight (Monaco)</option>
+                <option value="arc-graphite">Arc Graphite (Monaco)</option>
+                <option value="hc-black">hc-black</option>
+              </select>
+            </div>
+
+            <div class="formRow">
+              <div class="formLabel">
+                <div class="k">Font Size</div>
+                <div class="d">From 15 to 19 (default 17)</div>
+              </div>
+              <div class="rangeWrap">
+                <input
+                  class="range"
+                  type="range"
+                  id="fontSize"
+                  min="15"
+                  max="19"
+                  step="1"
+                />
+                <div class="rangeValue"><span id="fontSizeValue">17</span> px</div>
+              </div>
+            </div>
+
+            <div class="formRow">
+              <div class="formLabel">
+                <div class="k">Reduce Motion</div>
+                <div class="d">Disable most animations</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="reduceMotion" />
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="formRow">
+              <div class="formLabel">
+                <div class="k">Extensions Folder</div>
+                <div class="d">Loaded on startup</div>
+              </div>
+              <div class="inline">
+                <input class="input" id="extensionsRoot" readonly />
+                <button class="secondary sm" id="pickExtensionsRoot">Change</button>
+              </div>
+            </div>
+
+            <div class="formActions">
+              <button class="secondary" id="btnReloadExtensions">Reload extensions</button>
+              <button class="primary" id="btnApplySettings">Apply</button>
+            </div>
+          </div>
+
+          <div class="extList hidden" id="extensionsList">
+            <div class="extHeader">Installed extensions</div>
+            <div class="extItems" id="extItems"></div>
+            <div class="hint">
+              Each extension is a folder with <span class="code">manifest.json</span> and
+              <span class="code">main.js</span>.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
+
