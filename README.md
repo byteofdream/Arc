@@ -97,26 +97,6 @@ Run on a Windows machine:
 ```powershell
 pwsh ./scripts/build-windows-release.ps1
 ```
-
-See also:
-
-- `website/downloads/v0.1.0/windows/BUILD_ON_WINDOWS.md`
-
-## Website
-
-Marketing/download website is located in:
-
-- `website/` (English pages)
-- `website/ru-ru/` (Russian localization)
-
-Download page:
-
-- `website/download.html`
-
-Release notes:
-
-- `website/downloads/v0.1.0/RELEASE_NOTES.md`
-
 ## Extension Development
 
 Each extension is a folder under app extensions root containing:
