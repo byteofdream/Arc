@@ -74,7 +74,7 @@ Implemented in `src/FileBridge.*`:
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-./build/arc-mini-ide
+./build/arc-ide
 ```
 
 ## Build & Release Scripts
@@ -87,8 +87,8 @@ cmake --build build -j
 
 Outputs:
 
-- `website/downloads/arc-mini-ide-v0.1.0-linux-x86_64.tar.gz`
-- `website/downloads/arc-mini-ide-v0.1.0-linux-x86_64.tar.gz.sha256`
+- `website/downloads/arc-ide-v0.1.0-linux-x86_64.tar.gz`
+- `website/downloads/arc-ide-v0.1.0-linux-x86_64.tar.gz.sha256`
 
 ### Windows release artifact
 
@@ -97,6 +97,26 @@ Run on a Windows machine:
 ```powershell
 pwsh ./scripts/build-windows-release.ps1
 ```
+
+See also:
+
+- `website/downloads/v0.1.0/windows/BUILD_ON_WINDOWS.md`
+
+## Website
+
+Marketing/download website is located in:
+
+- `website/` (English pages)
+- `website/ru-ru/` (Russian localization)
+
+Download page:
+
+- `website/download.html`
+
+Release notes:
+
+- `website/downloads/v0.1.0/RELEASE_NOTES.md`
+
 ## Extension Development
 
 Each extension is a folder under app extensions root containing:
