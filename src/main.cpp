@@ -24,11 +24,11 @@ static void configureWebEngine(QWebEngineView* view) {
 
 int main(int argc, char* argv[]) {
   QApplication app(argc, argv);
-  QApplication::setApplicationName("Arc Mini IDE");
+  QApplication::setApplicationName("Arc IDE");
   QApplication::setOrganizationName("Arc");
 
   auto* view = new QWebEngineView();
-  view->setWindowTitle("Arc Mini IDE");
+  view->setWindowTitle("Arc IDE");
   view->resize(1280, 800);
 
   configureWebEngine(view);
