@@ -1,9 +1,13 @@
 /* global QWebChannel, monaco, require */
 
+/** Qt resource paths for toolbar / tab icons */
+const ICON = (file) => `qrc:/web/icons/white/${file}`;
+
 const state = {
   bridge: null,
   editor: null,
   workspaceRoot: "",
+  sideView: "explorer", // "explorer" | "extensions"
   modelsByPath: new Map(), // path -> monaco.editor.ITextModel
   tabs: [], // { path, name, language, dirty }
   activePath: "",
@@ -14,7 +18,8 @@ const state = {
     reduceMotion: false,
     extensionsRoot: "",
   },
-  extensions: [], // { id, name, version, description, dir }
+  extensions: [], // full entry: id, name, version, description, dir, manifest, extRoot, source
+  selectedExtension: null,
 };
 
 function $(sel) {
@@ -27,17 +32,90 @@ function setStatus(text) {
   el.textContent = text;
 }
 
+/** Monaco language id + icon key (see LANG_ICON_FILES). */
 function extToLanguage(path) {
   const p = (path || "").toLowerCase();
-  if (p.endsWith(".cpp") || p.endsWith(".cc") || p.endsWith(".cxx") || p.endsWith(".h") || p.endsWith(".hpp")) return "cpp";
-  if (p.endsWith(".js") || p.endsWith(".mjs") || p.endsWith(".cjs") || p.endsWith(".ts") || p.endsWith(".tsx")) return "javascript";
-  if (p.endsWith(".py")) return "python";
-  if (p.endsWith(".sway")) return "sway";
-  if (p.endsWith(".json")) return "json";
-  if (p.endsWith(".html") || p.endsWith(".htm")) return "html";
-  if (p.endsWith(".css")) return "css";
-  if (p.endsWith(".md")) return "markdown";
-  return "plaintext";
+  const dot = p.lastIndexOf(".");
+  if (dot === -1) return "plaintext";
+  const ext = p.slice(dot);
+  const map = {
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".hpp": "cpp",
+    ".hh": "cpp",
+    ".hxx": "cpp",
+    ".h": "cpp",
+    ".c": "c",
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".py": "python",
+    ".pyw": "python",
+    ".sway": "sway",
+    ".json": "json",
+    ".html": "html",
+    ".htm": "html",
+    ".css": "css",
+    ".md": "markdown",
+    ".mdx": "markdown",
+    ".rs": "rust",
+    ".go": "go",
+    ".java": "java",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".rb": "ruby",
+    ".php": "php",
+    ".sh": "shell",
+    ".bash": "shell",
+    ".zsh": "shell",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".xml": "xml",
+    ".sql": "sql",
+    ".vue": "vue",
+    ".swift": "swift",
+    ".cs": "csharp",
+  };
+  return map[ext] || "plaintext";
+}
+
+const LANG_ICON_FILES = {
+  cpp: "lang-cpp.svg",
+  c: "lang-c.svg",
+  javascript: "lang-javascript.svg",
+  typescript: "lang-typescript.svg",
+  python: "lang-python.svg",
+  sway: "lang-sway.svg",
+  json: "lang-json.svg",
+  html: "lang-html.svg",
+  css: "lang-css.svg",
+  markdown: "lang-markdown.svg",
+  plaintext: "lang-plaintext.svg",
+  rust: "lang-rust.svg",
+  go: "lang-go.svg",
+  java: "lang-java.svg",
+  kotlin: "lang-kotlin.svg",
+  ruby: "lang-ruby.svg",
+  php: "lang-php.svg",
+  shell: "lang-shell.svg",
+  yaml: "lang-yaml.svg",
+  xml: "lang-xml.svg",
+  sql: "lang-sql.svg",
+  vue: "lang-vue.svg",
+  swift: "lang-swift.svg",
+  csharp: "lang-csharp.svg",
+};
+
+function langIconUrlFromLang(lang) {
+  const f = LANG_ICON_FILES[lang] || LANG_ICON_FILES.plaintext;
+  return `qrc:/web/icons/lang/${f}`;
+}
+
+function langIconUrlFromPath(path) {
+  return langIconUrlFromLang(extToLanguage(path));
 }
 
 function basename(path) {
@@ -94,6 +172,14 @@ function renderTabs() {
     dot.className = "dot";
     tab.appendChild(dot);
 
+    const langImg = document.createElement("img");
+    langImg.className = "tabLangIcon";
+    langImg.src = langIconUrlFromLang(t.language);
+    langImg.alt = "";
+    langImg.width = 14;
+    langImg.height = 14;
+    tab.appendChild(langImg);
+
     const name = document.createElement("div");
     name.className = "name";
     name.textContent = t.name;
@@ -101,8 +187,19 @@ function renderTabs() {
 
     const close = document.createElement("button");
     close.className = "close";
-    close.textContent = "×";
     close.title = "Close";
+    const closeLegacy = document.createElement("span");
+    closeLegacy.className = "close-legacy";
+    closeLegacy.setAttribute("aria-hidden", "true");
+    closeLegacy.textContent = "×";
+    const closeImg = document.createElement("img");
+    closeImg.className = "ico-svg ico-svg--sm";
+    closeImg.src = ICON("icon-close-tab.svg");
+    closeImg.width = 14;
+    closeImg.height = 14;
+    closeImg.alt = "";
+    close.appendChild(closeLegacy);
+    close.appendChild(closeImg);
     close.addEventListener("click", (e) => {
       e.stopPropagation();
       closeTab(t.path);
@@ -221,20 +318,11 @@ async function openFolderDialog() {
   if (!dir) return;
   state.workspaceRoot = dir;
   $("#workspaceLabel").textContent = dir;
+  await new Promise((resolve) => {
+    state.bridge.setWorkspaceRoot(dir, () => resolve());
+  });
   await loadExplorer(dir);
   setStatus("Folder opened.");
-}
-
-function iconFor(node) {
-  if (node.isDir) return "📁";
-  const p = (node.path || "").toLowerCase();
-  if (p.endsWith(".cpp") || p.endsWith(".h") || p.endsWith(".hpp")) return "🧩";
-  if (p.endsWith(".js") || p.endsWith(".ts")) return "🟨";
-  if (p.endsWith(".py")) return "🐍";
-  if (p.endsWith(".sway")) return "🟦";
-  if (p.endsWith(".json")) return "🔧";
-  if (p.endsWith(".md")) return "📝";
-  return "📄";
 }
 
 function buildTree(container, node, depth = 0) {
@@ -248,8 +336,17 @@ function buildTree(container, node, depth = 0) {
   row.appendChild(twisty);
 
   const icon = document.createElement("div");
-  icon.className = "icon";
-  icon.textContent = iconFor(node);
+  icon.className = "icon icon--lang";
+  const glyph = document.createElement("img");
+  glyph.className = "langGlyph";
+  glyph.draggable = false;
+  glyph.alt = "";
+  if (node.isDir) {
+    glyph.src = "qrc:/web/icons/lang/lang-folder.svg";
+  } else {
+    glyph.src = langIconUrlFromPath(node.path);
+  }
+  icon.appendChild(glyph);
   row.appendChild(icon);
 
   const label = document.createElement("div");
@@ -315,11 +412,15 @@ async function saveActive() {
   if (!model) return;
 
   setStatus("Saving…");
+  const text = model.getValue();
   const ok = await new Promise((resolve) => {
-    state.bridge.writeFile(path, model.getValue(), (r) => resolve(r));
+    state.bridge.writeFile(path, text, (r) => resolve(r));
   });
   if (ok) {
     markDirty(path, false);
+    await new Promise((resolve) => {
+      state.bridge.syncAutoSaveBaseline(path, text, () => resolve());
+    });
     setStatus(`Saved: ${basename(path)}`);
   } else {
     setStatus("Save failed.");
@@ -578,25 +679,11 @@ function defineArcMonacoThemes() {
   });
 }
 
-function showOverlay(mode) {
+function showSettingsOverlay() {
   const overlay = $("#overlay");
   overlay.classList.remove("hidden");
-
-  const title = $("#overlayTitle");
-  const extList = $("#extensionsList");
-  const form = overlay.querySelector(".form");
-
-  if (mode === "extensions") {
-    title.textContent = "Extensions";
-    extList.classList.remove("hidden");
-    form.classList.add("hidden");
-    renderExtensionsList();
-  } else {
-    title.textContent = "Settings";
-    extList.classList.add("hidden");
-    form.classList.remove("hidden");
-    syncSettingsUI();
-  }
+  $("#overlayTitle").textContent = "Settings";
+  syncSettingsUI();
 }
 
 function hideOverlay() {
@@ -609,11 +696,30 @@ function syncSettingsUI() {
   $("#fontSize").value = String(state.settings.fontSize);
   $("#fontSizeValue").textContent = String(state.settings.fontSize);
   $("#reduceMotion").checked = !!state.settings.reduceMotion;
-  $("#extensionsRoot").value = state.settings.extensionsRoot || "";
+}
+
+function setSideView(view) {
+  state.sideView = view;
+  const explorerOn = view === "explorer";
+  $("#panelExplorer").classList.toggle("hidden", !explorerOn);
+  $("#panelExtensions").classList.toggle("hidden", explorerOn);
+  $("#btnSideExplorer").classList.toggle("active", explorerOn);
+  $("#btnExtensions").classList.toggle("active", !explorerOn);
+  if (view === "extensions") renderExtensionsList();
+}
+
+function filterExtensionsList(query) {
+  const q = (query || "").trim().toLowerCase();
+  const rows = document.querySelectorAll("#extPanelItems .extItem");
+  for (const row of rows) {
+    const hay = (row.dataset.search || "").toLowerCase();
+    row.classList.toggle("hidden", q.length > 0 && !hay.includes(q));
+  }
 }
 
 function renderExtensionsList() {
-  const items = $("#extItems");
+  const items = $("#extPanelItems");
+  if (!items) return;
   items.innerHTML = "";
   const list = state.extensions || [];
 
@@ -627,7 +733,9 @@ function renderExtensionsList() {
 
   for (const ext of list) {
     const row = document.createElement("div");
-    row.className = "extItem";
+    row.className = "extItem extItem--clickable";
+    row.dataset.extId = ext.id;
+    row.title = "View details";
 
     const meta = document.createElement("div");
     meta.className = "extMeta";
@@ -649,8 +757,210 @@ function renderExtensionsList() {
 
     row.appendChild(meta);
     row.appendChild(badge);
+    row.dataset.search = `${ext.name || ""} ${ext.id || ""} ${ext.description || ""} ${ext.dir || ""}`;
+    row.addEventListener("click", () => openExtensionDetail(ext));
     items.appendChild(row);
   }
+  filterExtensionsList($("#extSearchInput")?.value || "");
+}
+
+function compareSemver(a, b) {
+  const pa = String(a || "0")
+    .split(/[.+_-]/)
+    .map((x) => parseInt(x, 10))
+    .map((n) => (Number.isFinite(n) ? n : 0));
+  const pb = String(b || "0")
+    .split(/[.+_-]/)
+    .map((x) => parseInt(x, 10))
+    .map((n) => (Number.isFinite(n) ? n : 0));
+  const n = Math.max(pa.length, pb.length);
+  for (let i = 0; i < n; i++) {
+    const da = pa[i] || 0;
+    const db = pb[i] || 0;
+    if (da > db) return 1;
+    if (da < db) return -1;
+  }
+  return 0;
+}
+
+let _extDownloadWaiter = null;
+let _extFetchWaiter = null;
+let _extensionSignalsWired = false;
+
+function wireExtensionBridgeSignals() {
+  if (!state.bridge || _extensionSignalsWired) return;
+  _extensionSignalsWired = true;
+  state.bridge.extensionDownloadFinished.connect((ok, destPath, err) => {
+    if (_extDownloadWaiter) {
+      const r = _extDownloadWaiter;
+      _extDownloadWaiter = null;
+      r({ ok, destPath, err: err || "" });
+    }
+  });
+  state.bridge.extensionFetchFinished.connect((ok, url, body, err) => {
+    if (_extFetchWaiter) {
+      const r = _extFetchWaiter;
+      _extFetchWaiter = null;
+      r({ ok, url, body: body || "", err: err || "" });
+    }
+  });
+}
+
+function downloadToFileAsync(url, destPath) {
+  return new Promise((resolve) => {
+    _extDownloadWaiter = resolve;
+    state.bridge.downloadToFile(url, destPath, () => {});
+  });
+}
+
+function fetchUrlTextAsync(url) {
+  return new Promise((resolve) => {
+    _extFetchWaiter = resolve;
+    state.bridge.fetchUrlText(url, () => {});
+  });
+}
+
+async function openExtensionDetail(ext) {
+  state.selectedExtension = ext;
+  const sheet = $("#extDetailSheet");
+  const backdrop = $("#extDetailBackdrop");
+  if (!sheet || !backdrop) return;
+  $("#extDetailTitle").textContent = ext.name || ext.id;
+  $("#extDetailId").textContent = ext.id;
+  $("#extDetailVersion").textContent = ext.version || "—";
+  $("#extDetailPath").textContent = ext.dir || "";
+  $("#extDetailDesc").textContent = ext.description || "—";
+  const upd = ext.manifest && ext.manifest.updateManifestUrl;
+  $("#extDetailUpdateUrl").textContent = upd || "— (add updateManifestUrl to manifest.json)";
+  $("#extDetailSource").textContent = ext.source === "bundled" ? "Bundled" : "User folder";
+  $("#extDetailSource").className = "extDetailBadge " + (ext.source === "bundled" ? "isBundled" : "isUser");
+  $("#extDetailHint").textContent =
+    ext.source === "bundled"
+      ? "Removing deletes the copy on disk next to the application (developer build)."
+      : "Removing deletes this folder under your extensions directory.";
+  $("#extDetailReadme").textContent = "Loading…";
+  sheet.classList.remove("hidden");
+  backdrop.classList.remove("hidden");
+  sheet.setAttribute("aria-hidden", "false");
+
+  const readmePath = `${ext.dir}/README.md`;
+  const readmeText = await new Promise((resolve) => {
+    state.bridge.readFile(readmePath, (r) => resolve(r || ""));
+  });
+  $("#extDetailReadme").textContent = readmeText.trim() ? readmeText : "— (no README.md)";
+}
+
+function closeExtensionDetail() {
+  state.selectedExtension = null;
+  $("#extDetailSheet")?.classList.add("hidden");
+  $("#extDetailBackdrop")?.classList.add("hidden");
+  $("#extDetailSheet")?.setAttribute("aria-hidden", "true");
+}
+
+async function onExtensionCheckUpdate() {
+  const ext = state.selectedExtension;
+  if (!ext || !state.bridge) return;
+  const url = ext.manifest && ext.manifest.updateManifestUrl;
+  if (!url || !String(url).startsWith("http")) {
+    setStatus("No updateManifestUrl in manifest (https URL to a JSON manifest).");
+    return;
+  }
+  setStatus("Checking for updates…");
+  try {
+    const { ok, body, err } = await fetchUrlTextAsync(url);
+    if (!ok) {
+      setStatus(`Update check failed: ${err || "network"}`);
+      return;
+    }
+    let remote = null;
+    try {
+      remote = JSON.parse(body);
+    } catch {
+      setStatus("Update manifest is not valid JSON.");
+      return;
+    }
+    const v = remote.version || remote.latest || "";
+    if (!v) {
+      setStatus("Remote manifest has no version field.");
+      return;
+    }
+    const cmp = compareSemver(v, ext.version || "0");
+    if (cmp > 0) {
+      const dl = remote.packageUrl || remote.downloadUrl || remote.zipUrl || "";
+      setStatus(`Update available: ${v} (current ${ext.version || "?"})${dl ? " — set packageUrl in manifest to download." : ""}`);
+    } else if (cmp === 0) {
+      setStatus(`You are on the latest version (${ext.version || v}).`);
+    } else {
+      setStatus(`Local version is newer or equal (remote ${v}, local ${ext.version || "?"}).`);
+    }
+  } catch (e) {
+    setStatus("Update check failed.");
+    // eslint-disable-next-line no-console
+    console.error(e);
+  }
+}
+
+async function onExtensionDelete() {
+  const ext = state.selectedExtension;
+  if (!ext || !state.bridge) return;
+  const ok = confirm(`Remove extension "${ext.name || ext.id}"?\n\n${ext.dir}`);
+  if (!ok) return;
+  setStatus("Removing extension…");
+  const removed = await new Promise((resolve) => {
+    state.bridge.removeRecursiveUnderRoot(ext.extRoot, ext.dir, (r) => resolve(r));
+  });
+  if (removed) {
+    closeExtensionDetail();
+    await loadExtensions();
+    setStatus("Extension removed.");
+  } else {
+    setStatus("Could not remove (path not allowed or missing).");
+  }
+}
+
+async function onInstallFromUrl() {
+  const url = ($("#extInstallUrl") && $("#extInstallUrl").value.trim()) || "";
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    setStatus("Enter a valid http(s) URL to a .zip file.");
+    return;
+  }
+  const userRoot = state.settings.extensionsRoot;
+  if (!userRoot) {
+    setStatus("Extensions folder not set.");
+    return;
+  }
+  const staging = `${userRoot}/.arc-staging`;
+  await new Promise((resolve) => state.bridge.ensureDir(staging, () => resolve()));
+  const zipPath = `${staging}/install-${Date.now()}.zip`;
+  setStatus("Downloading extension…");
+  const { ok, err } = await downloadToFileAsync(url, zipPath);
+  if (!ok) {
+    setStatus(`Download failed: ${err || "?"}`);
+    return;
+  }
+  setStatus("Unpacking…");
+  const unzipped = await new Promise((resolve) => {
+    state.bridge.unzipArchive(zipPath, userRoot, (r) => resolve(r));
+  });
+  await new Promise((resolve) => {
+    state.bridge.removeRecursiveUnderRoot(userRoot, zipPath, () => resolve());
+  });
+  if (!unzipped) {
+    setStatus("Unpack failed (install unzip/tar or check archive).");
+    await loadExtensions();
+    return;
+  }
+  $("#extInstallUrl").value = "";
+  await loadExtensions();
+  setStatus("Extension installed from URL.");
+}
+
+function bindExtensionDetailUI() {
+  $("#extDetailClose")?.addEventListener("click", closeExtensionDetail);
+  $("#extDetailBackdrop")?.addEventListener("click", closeExtensionDetail);
+  $("#extDetailCheckUpdate")?.addEventListener("click", () => onExtensionCheckUpdate());
+  $("#extDetailDelete")?.addEventListener("click", () => onExtensionDelete());
+  $("#btnExtInstallDownload")?.addEventListener("click", () => onInstallFromUrl());
 }
 
 async function detectDefaultExtensionsRoot() {
@@ -674,33 +984,53 @@ async function readJson(path) {
 async function loadExtensions() {
   if (!state.bridge) return;
 
+  for (const el of document.querySelectorAll("style[data-ext]")) {
+    el.remove();
+  }
+
   if (!state.settings.extensionsRoot) {
     state.settings.extensionsRoot = await detectDefaultExtensionsRoot();
     saveSettings();
   }
 
-  const root = state.settings.extensionsRoot;
-  $("#extensionsRoot").value = root;
+  const userRoot = state.settings.extensionsRoot;
+  const panelInput = $("#extensionsRootPanel");
+  if (panelInput) panelInput.value = userRoot;
 
-  // Root listing gives us children nodes; take only directories as extensions.
-  const roots = await new Promise((resolve) => state.bridge.listFiles(root, (r) => resolve(r)));
-  const rootNode = roots && roots[0];
-  const children = (rootNode && rootNode.children) || [];
+  const bundled = await new Promise((resolve) => {
+    state.bridge.bundledExtensionsDir((r) => resolve(r || ""));
+  });
+
+  const roots = [];
+  if (bundled) roots.push(bundled);
+  if (userRoot && userRoot !== bundled) roots.push(userRoot);
+
+  const byId = new Map();
+  for (const root of roots) {
+    if (!root) continue;
+    const listed = await new Promise((resolve) => state.bridge.listFiles(root, (r) => resolve(r)));
+    const rootNode = listed && listed[0];
+    const children = (rootNode && rootNode.children) || [];
+    for (const ch of children) {
+      if (!ch.isDir) continue;
+      const manifest = await readJson(`${ch.path}/manifest.json`);
+      if (!manifest || !manifest.id) continue;
+      byId.set(manifest.id, {
+        dir: ch.path,
+        manifest,
+        extRoot: root,
+        source: bundled && root === bundled ? "bundled" : "user",
+      });
+    }
+  }
 
   const found = [];
-  for (const ch of children) {
-    if (!ch.isDir) continue;
-    const dir = ch.path;
-    const manifestPath = `${dir}/manifest.json`;
+  for (const entry of byId.values()) {
+    const { dir, manifest, extRoot, source } = entry;
     const mainPath = `${dir}/main.js`;
-
-    const manifest = await readJson(manifestPath);
-    if (!manifest || !manifest.id) continue;
-
     const main = await new Promise((resolve) => state.bridge.readFile(mainPath, (r) => resolve(r)));
     if (!main) continue;
 
-    // Optional CSS
     const cssPath = `${dir}/styles.css`;
     const css = await new Promise((resolve) => state.bridge.readFile(cssPath, (r) => resolve(r)));
     if (css) {
@@ -710,8 +1040,6 @@ async function loadExtensions() {
       document.head.appendChild(style);
     }
 
-    // Run extension in a tiny sandbox-like wrapper.
-    // Extension entry: module.exports.activate(api)
     const module = { exports: {} };
     const exports = module.exports;
 
@@ -736,9 +1064,11 @@ async function loadExtensions() {
         version: manifest.version || "",
         description: manifest.description || "",
         dir,
+        manifest,
+        extRoot,
+        source,
       });
     } catch (e) {
-      // Keep app running even if an extension fails.
       // eslint-disable-next-line no-console
       console.error("Extension failed:", manifest.id, e);
     }
@@ -747,6 +1077,26 @@ async function loadExtensions() {
   state.extensions = found;
   renderExtensionsList();
   setStatus(found.length ? `Extensions loaded: ${found.length}` : "No extensions loaded.");
+}
+
+function wireEditorAutoSave() {
+  if (!state.editor || !state.bridge) return;
+
+  state.editor.onDidChangeModelContent(() => {
+    const path = state.activePath;
+    if (!path) return;
+    const model = state.modelsByPath.get(path);
+    if (!model) return;
+    state.bridge.notifyAutoSaveChange(path, model.getValue(), () => {});
+  });
+
+  state.editor.onDidBlurEditorWidget(() => {
+    const path = state.activePath;
+    if (!path) return;
+    const model = state.modelsByPath.get(path);
+    if (!model) return;
+    state.bridge.notifyAutoSaveFocusLost(path, model.getValue(), () => {});
+  });
 }
 
 function initMonaco() {
@@ -761,7 +1111,7 @@ function initMonaco() {
       defineArcMonacoThemes();
       registerSwayLanguage();
 
-      state.editor = monaco.editor.create($("#editor"), {
+      const ed = monaco.editor.create($("#editor"), {
         theme: state.settings.monacoTheme || "arc-dark",
         automaticLayout: true,
         minimap: { enabled: true },
@@ -773,6 +1123,7 @@ function initMonaco() {
         renderWhitespace: "selection",
         padding: { top: 12, bottom: 12 },
       });
+      state.editor = ed;
 
       // Save shortcut
       window.addEventListener("keydown", (e) => {
@@ -782,6 +1133,7 @@ function initMonaco() {
         }
       });
 
+      wireEditorAutoSave();
       resolve();
     });
   });
@@ -797,6 +1149,7 @@ function initBridge() {
 }
 
 function bindUI() {
+  $("#btnSideExplorer").addEventListener("click", () => setSideView("explorer"));
   $("#btnOpenFile").addEventListener("click", openFileDialog);
   $("#btnOpenFolder").addEventListener("click", openFolderDialog);
   $("#btnSave").addEventListener("click", saveActive);
@@ -806,16 +1159,20 @@ function bindUI() {
   $("#welcomeOpenFile").addEventListener("click", openFileDialog);
   $("#welcomeOpenFolder").addEventListener("click", openFolderDialog);
 
-  // Overlay controls
-  $("#btnSettings").addEventListener("click", () => showOverlay("settings"));
-  $("#btnExtensions").addEventListener("click", () => showOverlay("extensions"));
+  $("#btnSettings").addEventListener("click", showSettingsOverlay);
+  $("#btnExtensions").addEventListener("click", () => setSideView("extensions"));
   $("#overlayClose").addEventListener("click", hideOverlay);
   $("#overlayBackdrop").addEventListener("click", hideOverlay);
   window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") hideOverlay();
+    if (e.key === "Escape") {
+      if (!$("#extDetailSheet")?.classList.contains("hidden")) {
+        closeExtensionDetail();
+        return;
+      }
+      hideOverlay();
+    }
   });
 
-  // Settings inputs
   $("#fontSize").addEventListener("input", (e) => {
     const v = Number(e.target.value);
     $("#fontSizeValue").textContent = String(v);
@@ -833,14 +1190,20 @@ function bindUI() {
   $("#btnReloadExtensions").addEventListener("click", async () => {
     await loadExtensions();
   });
-  $("#pickExtensionsRoot").addEventListener("click", async () => {
+  $("#pickExtensionsRootPanel").addEventListener("click", async () => {
     const dir = await new Promise((resolve) => state.bridge.openFolderDialog((p) => resolve(p)));
     if (!dir) return;
     state.settings.extensionsRoot = dir;
-    $("#extensionsRoot").value = dir;
+    const panelInput = $("#extensionsRootPanel");
+    if (panelInput) panelInput.value = dir;
     saveSettings();
     await loadExtensions();
   });
+  const extSearch = $("#extSearchInput");
+  if (extSearch) {
+    extSearch.addEventListener("input", () => filterExtensionsList(extSearch.value));
+  }
+  bindExtensionDetailUI();
 }
 
 (async function boot() {
@@ -848,9 +1211,19 @@ function bindUI() {
   loadSettings();
   bindUI();
   await initBridge();
+  wireExtensionBridgeSignals();
+  if (state.bridge.symbolIndexUpdated) {
+    state.bridge.symbolIndexUpdated.connect(() => {
+      setStatus("Symbol index updated.");
+    });
+  }
+  await new Promise((resolve) => {
+    state.bridge.configureAutoSave(2, 1500, () => resolve());
+  });
   await initMonaco();
   applySettings();
   await loadExtensions();
+  setSideView("explorer");
   setStatus("Ready");
 })();
 

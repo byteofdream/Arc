@@ -6,7 +6,13 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
-    <title>Arc Mini IDE</title>
+    <title>Arc IDE</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&subset=latin,cyrillic&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="styles.css" />
 
     <!-- Qt WebChannel -->
@@ -31,41 +37,134 @@
   <body>
     <div id="app">
       <aside class="sidebar">
-        <button class="sidebtn active" title="Explorer">
-          <span class="ico">⧉</span>
+        <button class="sidebtn sidebtn--surface active" type="button" id="btnSideExplorer" title="Explorer">
+          <span class="ico ico--legacy" aria-hidden="true">⧉</span>
+          <img class="ico-svg" src="qrc:/web/icons/white/icon-explorer.svg" width="20" height="20" alt="" />
         </button>
-        <button class="sidebtn" id="btnOpenFolder" title="Open Folder">
-          <span class="ico">🗂</span>
+        <button class="sidebtn sidebtn--surface" type="button" id="btnOpenFolder" title="Open Folder">
+          <span class="ico ico--legacy" aria-hidden="true">🗂</span>
+          <img class="ico-svg" src="qrc:/web/icons/white/icon-folder.svg" width="20" height="20" alt="" />
         </button>
-        <button class="sidebtn" id="btnOpenFile" title="Open File">
-          <span class="ico">📄</span>
+        <button class="sidebtn sidebtn--surface" type="button" id="btnOpenFile" title="Open File">
+          <span class="ico ico--legacy" aria-hidden="true">📄</span>
+          <img class="ico-svg" src="qrc:/web/icons/white/icon-file.svg" width="20" height="20" alt="" />
         </button>
-        <button class="sidebtn" id="btnExtensions" title="Extensions">
-          <span class="ico">🧩</span>
+        <button class="sidebtn sidebtn--surface" type="button" id="btnExtensions" title="Extensions">
+          <span class="ico ico--legacy" aria-hidden="true">🧩</span>
+          <img class="ico-svg" src="qrc:/web/icons/white/icon-extensions.svg" width="20" height="20" alt="" />
         </button>
         <div class="spacer"></div>
-        <button class="sidebtn" id="btnSettings" title="Settings">
-          <span class="ico">⚙</span>
+        <button class="sidebtn sidebtn--surface" type="button" id="btnSettings" title="Settings">
+          <span class="ico ico--legacy" aria-hidden="true">⚙</span>
+          <img class="ico-svg" src="qrc:/web/icons/white/icon-settings.svg" width="20" height="20" alt="" />
         </button>
-        <button class="sidebtn" id="btnSave" title="Save (Ctrl+S)">
-          <span class="ico">💾</span>
+        <button class="sidebtn sidebtn--surface" type="button" id="btnSave" title="Save (Ctrl+S)">
+          <span class="ico ico--legacy" aria-hidden="true">💾</span>
+          <img class="ico-svg" src="qrc:/web/icons/white/icon-save.svg" width="20" height="20" alt="" />
         </button>
       </aside>
 
       <section class="panel">
-        <header class="panelHeader">
-          <div class="panelTitle">EXPLORER</div>
-          <div class="panelActions">
-            <button class="ghost" id="btnRefresh" title="Refresh">⟳</button>
+        <div id="panelExplorer" class="panelPage">
+          <header class="panelHeader">
+            <div class="panelTitle">EXPLORER</div>
+            <div class="panelActions">
+              <button type="button" class="ghost ghost--surface" id="btnRefresh" title="Refresh">
+                <span class="ghost-legacy" aria-hidden="true">⟳</span>
+                <img class="ico-svg ico-svg--sm" src="qrc:/web/icons/white/icon-refresh.svg" width="16" height="16" alt="" />
+              </button>
+            </div>
+          </header>
+          <div id="explorer" class="explorer"></div>
+        </div>
+
+        <div id="panelExtensions" class="panelPage hidden">
+          <header class="panelHeader">
+            <div class="panelTitle">EXTENSIONS</div>
+            <div class="panelActions">
+              <button type="button" class="ghost ghost--surface" id="btnReloadExtensions" title="Reload">
+                <span class="ghost-legacy" aria-hidden="true">⟳</span>
+                <img class="ico-svg ico-svg--sm" src="qrc:/web/icons/white/icon-refresh.svg" width="16" height="16" alt="" />
+              </button>
+            </div>
+          </header>
+          <div class="extensionsPanel">
+            <div class="extSearchRow">
+              <input
+                type="search"
+                class="extSearchInput"
+                id="extSearchInput"
+                placeholder="Search installed extensions…"
+                autocomplete="off"
+              />
+            </div>
+            <div class="extItems" id="extPanelItems"></div>
+            <div class="extInstallBar">
+              <div class="extInstallLabel">Install from URL (.zip)</div>
+              <div class="inline extInstallRow">
+                <input
+                  class="input extInstallUrl"
+                  type="url"
+                  id="extInstallUrl"
+                  placeholder="https://example.com/my-extension.zip"
+                  autocomplete="off"
+                />
+                <button type="button" class="primary sm" id="btnExtInstallDownload">Download &amp; unpack</button>
+              </div>
+              <div class="hint extInstallHint">Archive should contain one folder with manifest.json and main.js.</div>
+            </div>
+            <div class="extPanelFooter">
+              <div class="hint">
+                Local extensions: folder with <span class="code">manifest.json</span> and
+                <span class="code">main.js</span>. Optional: <span class="code">updateManifestUrl</span> in manifest
+                for update checks.
+              </div>
+              <div class="inline extFolderRow">
+                <input class="input extFolderInput" id="extensionsRootPanel" readonly />
+                <button type="button" class="secondary sm" id="pickExtensionsRootPanel">
+                  Change…
+                </button>
+              </div>
+            </div>
           </div>
-        </header>
-        <div id="explorer" class="explorer"></div>
+          <div class="extDetailBackdrop hidden" id="extDetailBackdrop"></div>
+          <aside class="extDetailSheet hidden" id="extDetailSheet" aria-hidden="true">
+            <div class="extDetailHeader">
+              <button type="button" class="ghost ghost--surface extDetailBack" id="extDetailClose" title="Back">
+                <span aria-hidden="true">←</span>
+              </button>
+              <div class="extDetailTitle" id="extDetailTitle">Extension</div>
+            </div>
+            <div class="extDetailBody">
+              <div class="extDetailBadge" id="extDetailSource"></div>
+              <div class="extDetailGrid">
+                <div class="extDetailK">Identifier</div>
+                <div class="extDetailV mono" id="extDetailId"></div>
+                <div class="extDetailK">Version</div>
+                <div class="extDetailV" id="extDetailVersion"></div>
+                <div class="extDetailK">Path</div>
+                <div class="extDetailV mono extDetailPath" id="extDetailPath"></div>
+              </div>
+              <div class="extDetailK">Description</div>
+              <p class="extDetailDesc" id="extDetailDesc"></p>
+              <div class="extDetailK">Update manifest</div>
+              <p class="extDetailUpdateUrl mono" id="extDetailUpdateUrl"></p>
+              <div class="extDetailK">Readme</div>
+              <pre class="extDetailReadme" id="extDetailReadme">—</pre>
+              <div class="extDetailActions">
+                <button type="button" class="secondary" id="extDetailCheckUpdate">Check for updates</button>
+                <button type="button" class="danger" id="extDetailDelete">Remove…</button>
+              </div>
+              <p class="hint extDetailHint" id="extDetailHint"></p>
+            </div>
+          </aside>
+        </div>
       </section>
 
       <main class="main">
         <div class="titlebar">
           <div class="crumbs">
-            <span class="pill">Arc Mini IDE</span>
+            <span class="pill">Arc IDE</span>
             <span class="sep">/</span>
             <span id="workspaceLabel" class="muted">No folder opened</span>
           </div>
@@ -84,11 +183,11 @@
               <div class="welcomeText">
                 - Open a folder to browse files in Explorer<br />
                 - Open a file to start editing<br />
-                - Save with Ctrl+S
+                - Save with Ctrl+S (autosave runs in the background)
               </div>
               <div class="welcomeActions">
-                <button class="primary" id="welcomeOpenFolder">Open Folder</button>
-                <button class="secondary" id="welcomeOpenFile">Open File</button>
+                <button type="button" class="primary" id="welcomeOpenFolder">Open Folder</button>
+                <button type="button" class="secondary" id="welcomeOpenFile">Open File</button>
               </div>
             </div>
           </div>
@@ -96,13 +195,16 @@
       </main>
     </div>
 
-    <!-- Settings / Extensions overlay -->
+    <!-- Settings (modal, VS Code–style preferences) -->
     <div class="overlay hidden" id="overlay">
       <div class="overlayBackdrop" id="overlayBackdrop"></div>
       <div class="overlayPanel" role="dialog" aria-modal="true" aria-label="Settings">
         <div class="overlayHeader">
           <div class="overlayTitle" id="overlayTitle">Settings</div>
-          <button class="overlayClose" id="overlayClose" title="Close">×</button>
+          <button type="button" class="overlayClose overlayClose--surface" id="overlayClose" title="Close">
+            <span class="overlayClose-legacy" aria-hidden="true">×</span>
+            <img class="ico-svg ico-svg--sm" src="qrc:/web/icons/white/icon-close-tab.svg" width="16" height="16" alt="" />
+          </button>
         </div>
         <div class="overlayBody" id="overlayBody">
           <div class="form">
@@ -161,29 +263,8 @@
               </label>
             </div>
 
-            <div class="formRow">
-              <div class="formLabel">
-                <div class="k">Extensions Folder</div>
-                <div class="d">Loaded on startup</div>
-              </div>
-              <div class="inline">
-                <input class="input" id="extensionsRoot" readonly />
-                <button class="secondary sm" id="pickExtensionsRoot">Change</button>
-              </div>
-            </div>
-
             <div class="formActions">
-              <button class="secondary" id="btnReloadExtensions">Reload extensions</button>
-              <button class="primary" id="btnApplySettings">Apply</button>
-            </div>
-          </div>
-
-          <div class="extList hidden" id="extensionsList">
-            <div class="extHeader">Installed extensions</div>
-            <div class="extItems" id="extItems"></div>
-            <div class="hint">
-              Each extension is a folder with <span class="code">manifest.json</span> and
-              <span class="code">main.js</span>.
+              <button type="button" class="primary" id="btnApplySettings">Apply</button>
             </div>
           </div>
         </div>
@@ -193,4 +274,3 @@
     <script src="app.js"></script>
   </body>
 </html>
-
